@@ -1,0 +1,132 @@
+   <# function connections($VMs)
+    {
+    for($i=0; $i -lt $counts; $i++)
+    {
+                        
+          if((Test-NetConnection -ComputerName $VMs[$i] -ErrorAction SilentlyContinue -WarningAction SilentlyContinue).PingSucceeded -eq "True")
+          {
+            $TVMs+=@($VMs[$i]);
+            
+          }
+          else
+          {
+            $UVMs+=@($VMs[$i])
+            write-host "$UVMs unreachable"
+            
+          }
+            
+      continue;
+    }
+    }
+    #>
+$script:TVMs=@()
+$script:UVMs=@()
+
+
+function connection ($Computername)
+{
+    
+    for($i=0; $i -lt $Computername.count; $i++)
+    {
+                        
+          if((Test-NetConnection -ComputerName $Computername[$i] -ErrorAction SilentlyContinue -WarningAction SilentlyContinue -ErrorVariable +ErrorStore).PingSucceeded -eq "True")
+          {
+            $script:TVMs+=$Computername[$i];
+            
+            
+          }
+          else
+          {
+           $script:UVMs+=$Computername[$i];
+           
+            
+          }
+            
+
+    }
+    
+
+
+ }
+
+ 
+function shutdown($Computername)
+{
+    for($i=0;$i -lt $Computername.Count; $i++)
+    {
+    Stop-Computer -ComputerName $Computername[$i] -Force -ErrorAction SilentlyContinue -ErrorVariable +ErrorStore
+    }
+}
+
+function mail($Report)
+{
+$date=get-date -Format d
+$subject="LogReport on "+"$date"
+$body="Hi Jacob `n`n   Server log report on $date as attached,$UVMs unreachable `n`nFrom:Admin"
+Compress-Archive -Path $Report -DestinationPath "C:\Users\Jacob\Documents\Study\Script\Powershell\Report\Report.zip" -Update
+
+$Report="C:\Users\Jacob\Documents\Study\Script\Powershell\Report\report.zip"
+Send-MailMessage -Body $body -Attachments $Report -SmtpServer smtp.office365.com -From jacob.ye@outlook.com -To 'jacob.ye@outlook.com' -Subject $subject -UseSsl -Credential jacob.ye@outlook.com -Port 587 -ErrorAction SilentlyContinue -WarningAction SilentlyContinue -ErrorVariable +errorstore
+}
+
+Function Merge-CSVFiles
+{
+
+$csvFiles = Get-ChildItem ("$CSVPath\*") -Include *.csv
+$Excel = New-Object -ComObject excel.application 
+$Excel.visible = $false
+$Excel.sheetsInNewWorkbook = $csvFiles.Count
+$workbooks = $excel.Workbooks.Add()
+$CSVSheet = 1
+
+Foreach ($CSV in $Csvfiles)
+
+{
+$worksheets = $workbooks.worksheets
+$CSVFullPath = $CSV.FullName
+$SheetName = ($CSV.name -split "\.")[0]
+$worksheet = $worksheets.Item($CSVSheet)
+$worksheet.Name = $SheetName
+$TxtConnector = ("TEXT;" + $CSVFullPath)
+$CellRef = $worksheet.Range("A1")
+$Connector = $worksheet.QueryTables.add($TxtConnector,$CellRef)
+$worksheet.QueryTables.item($Connector.name).TextFileCommaDelimiter = $True
+$worksheet.QueryTables.item($Connector.name).TextFileParseType  = 1
+$worksheet.QueryTables.item($Connector.name).Refresh()
+$worksheet.QueryTables.item($Connector.name).delete()
+$worksheet.UsedRange.EntireColumn.AutoFit()
+$CSVSheet++
+
+}
+
+$workbooks.SaveAs($XLOutput,51)
+$workbooks.Saved = $true
+$workbooks.Close()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($workbooks) | Out-Null
+$excel.Quit()
+[System.Runtime.Interopservices.Marshal]::ReleaseComObject($excel) | Out-Null
+[System.GC]::Collect()
+[System.GC]::WaitForPendingFinalizers()
+
+}
+
+Function Logreport($VMs)
+{
+for($i=0;$i -lt $VMs.Count; $i++)
+{
+$date=Get-Date -Format D
+$Computername=$VMs[$i]
+$folder=New-Item -ItemType Directory -Name $Computername -Path "C:\Users\Jacob\Documents\Study\Script\Powershell\Output" -Force
+$filename="Error on $date"
+$filename1="Restart record on $date"
+$filename2="Shutdown record on $date"
+$filepath="$folder\$filename" 
+$filepath1="$folder\$filename1" 
+$filepath2="$folder\$filename2" 
+
+get-eventlog -ComputerName $Computername  -LogName System -Newest 5 -EntryType Error -ErrorAction SilentlyContinue -ErrorVariable +errorstore | select TimeGenerated , source,message | Format-Table -Wrap| Out-File "$filepath.csv"
+Get-EventLog -ComputerName $Computername  -LogName System | where {$_.EventID -eq 1074 -and $_.Message -like "*shutdown type: restart*"}   -ErrorAction SilentlyContinue -ErrorVariable +errorstore | ft -Wrap | Out-File "$filepath1.csv"
+Get-EventLog -ComputerName $Computername  -LogName System | where {$_.EventID -eq 1074 -and $_.Message -like "*shutdown type: shutdown*"}  -ErrorAction SilentlyContinue -ErrorVariable +errorstore | ft -Wrap | Out-File "$filepath2.csv"
+$script:logpath="C:\Users\Jacob\Documents\Study\Script\Powershell\Output"
+}
+}
